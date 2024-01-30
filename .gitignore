@@ -1,0 +1,6 @@
+.env
+api_keys.py
+TODO.txt
+venv/
+.idea
+__pycache__/
