@@ -36,8 +36,8 @@ class Card(Base):
     character: Mapped['Character'] = relationship(back_populates='cards')
 
     def __repr__(self) -> str:
-        return (f'Card(id={self.id!r},'
-                f'code={self.code!r})')
+        return (f'Card(id={self.id!r}, '
+                f'code={self.code!r}, player_id={self.player_id!r}, character_id={self.character_id!r})')
 
 
 """ Takes edition from CardEdition model and the cards to link them """
@@ -83,4 +83,13 @@ class CardEdition(Base):
     )
 
     def __repr__(self) -> str:
-        return f'CardEdition(id={self.id!r}, image={self.image!r})'
+        return f'CardEdition(id={self.id!r}, image={self.image!r}, character_id={self.character_id!r})'
+
+
+class Drop(Base):
+    __tablename__ = 'drop_count'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    def __repr__(self) -> str:
+        return f'id={self.id!r}'

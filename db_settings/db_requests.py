@@ -1,12 +1,13 @@
 import random
 import io
+
 import numpy as np
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from PIL import Image, ImageOps
 
-from db_settings.db_models import Player, Base, Card, CardEdition, Character
+from db_settings.db_models import Player, Base, Card, CardEdition, Character, Drop
 from utils.bot_commands_fucntionality import generate_cards
 
 
@@ -35,10 +36,14 @@ class MainPlayer(InitializeDataBase):
         player = Player(name=self.player, is_verified=True)
         self.session.add(player)
 
+    def collection(self):
+        player_cards_collection = self.session.query(Card).join(Card.player).where(Player.name == self.player).all()
+        return player_cards_collection
+
 
 class DropCards(InitializeDataBase):
 
-    def __init__(self, drop_qty: int) -> None:
+    def __init__(self, drop_qty: int | None = None) -> None:
         super().__init__()
 
         """ A variable for expanding functionality in the future """
@@ -61,7 +66,7 @@ class DropCards(InitializeDataBase):
         return path_to_character_img
 
     """ Generating card codes """
-    card = [Card(code=''.join(generate_cards(1))) for i in range(3)]
+    card_code = [''.join(generate_cards(1)) for i in range(3)]
 
     def create_character_for_card(self):
         """ Creating character """
@@ -75,39 +80,50 @@ class DropCards(InitializeDataBase):
                           CardEdition(image=self.generate_path()[i]),
                       ],
                       cards=[
-                          self.card[i]
+                          Card(code=[''.join(generate_cards(1)) for i in range(3)][i])
                       ]
                       )
             for i in range(self.drop_qty)
-        ]
 
+        ]
+        print(character)
         return character
 
     def run(self) -> None:
         """ Adding some values to a database """
 
         self.session.add_all(self.create_character_for_card())
+        drop_count = Drop()
+        self.session.add(drop_count)
 
         print(self.session.query(Player).all())
         print(self.session.query(Character).all())
         print(self.session.query(CardEdition).all())
         print(self.session.query(Card).all())
+        drop_id = select(Drop.id)
+        print(self.session.scalars(drop_id).all())
 
     def images(self):
         """ Selecting image from database """
 
-        get_character_ids = list(zip(*self.session.query(Card.character_id).all()))[0]
+        get_character_ids = list(zip(*self.session.query(Card.character_id).all()[-3:]))[0]
+        print('--- GET CHARACTER ---')
+        print(get_character_ids)
 
         image = [
-            self.session.query(CardEdition.image)
+            select(CardEdition.image)
             .join(CardEdition.character)
             .where(Character.id == get_character_ids[i])
-            .first()
             for i in range(self.drop_qty)
         ]
 
+        image = [self.session.scalars(image[i]).all() for i in range(3)]
+        print('--- IMAGE ---')
+        print(image)
+
         """ Showing image """
         get_image = list(zip(*image))[0]
+
         return get_image
 
     def merge(self):
@@ -136,12 +152,24 @@ class DropCards(InitializeDataBase):
 
 
 class GrabCard(InitializeDataBase):
-    pass
+
+    def grab(self):
+        get_character_ids = list(zip(*self.session.query(Card.id).all()))[0]
+        print('--- GRAB ---')
+        print(get_character_ids)
+        return get_character_ids
 
 
 if __name__ == '__main__':
+    """ Player creation """
     player = MainPlayer(player='xyro')
     player.create_player()
+
+    """ Drop Creation """
     drop = DropCards(3)
     drop.run()
     Image._show(Image.open(io.BytesIO(drop.merge().getvalue())))
+
+    """ Grab creation """
+    grab = GrabCard()
+    grab.grab()
