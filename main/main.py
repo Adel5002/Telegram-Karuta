@@ -1,7 +1,9 @@
+""" Default imports """
 import asyncio
 import logging
 import sys
 
+""" aiogram imports """
 from aiogram import Dispatcher, Bot, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
@@ -11,34 +13,33 @@ from aiogram.enums import ParseMode
 from aiogram.utils.formatting import Bold, as_marked_section, as_key_value, as_list, Italic, Underline
 from aiogram import F
 
-from sqlalchemy import select
-
-from db_settings.db_models import Player, Card, Character
+""" Our app imports """
+from db_settings.db_models import Player, Card, Character, Drop
 from db_settings.db_requests import InitializeDataBase, DropCards, MainPlayer, GrabCard
 from utils.custom_bot_commands import custom_commands, commands_list, help_text
 from utils.user_permissions import user_is_verified
 from api_keys import API_KEY
 
+""" Bot init """
 bot = Bot(token=API_KEY, parse_mode=ParseMode.HTML)
-dp = Dispatcher()
-
-""" Greetings """
+dp = Dispatcher(kbs=[])
 
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
-    # user = User(id=message.from_user.id, is_bot=message.from_user.is_bot, first_name=message.from_user.username)
+    """ Greetings """
     await bot.set_my_commands(custom_commands())
     await message.answer(f'Hello, {hbold(message.from_user.full_name)}, im Karuta for Telegram! \n'
                          f' Please verify to start playing!'
                          f' Type /verify, also you can type /help to see list of commands')
 
 
-""" Custom Commands """
+""" Quick bot Commands """
 
 
 @dp.callback_query(F.data == 'success')
 async def success(callback: CallbackQuery) -> None:
+    """ Calling this func when user verified """
     dp['player'] = MainPlayer(player=callback.from_user.username)
     dp['player'].create_player()
     print(dp['player'])
@@ -47,11 +48,13 @@ async def success(callback: CallbackQuery) -> None:
 
 @dp.callback_query(F.data == 'decline')
 async def decline(callback: CallbackQuery) -> None:
+    """ Calling this func when user declined verification """
     await callback.message.answer('decline')
 
 
 @dp.message(Command('verify'))
 async def verify_player(message: Message) -> None:
+    """ Verifying user """
     buttons = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text='✅', callback_data='success'),
         InlineKeyboardButton(text='❌', callback_data='decline')
@@ -62,6 +65,7 @@ async def verify_player(message: Message) -> None:
 
 @dp.message(Command('help'))
 async def help(message: Message) -> None:
+    """ Help command to navigate in bot """
     command_help = as_list(
         as_marked_section(
             Bold('Commands:'),
@@ -73,75 +77,81 @@ async def help(message: Message) -> None:
     await message.answer(**command_help.as_kwargs())
 
 
-""" Bot Commands Listener """
-
-
 @dp.message()
 async def commands_listen(message: types.Message) -> None:
-    get_player = dp['player'].session.query(Player).filter_by(name=message.from_user.username).first()
+    """ Bot Commands Listener """
+
+    drop = DropCards(3)
+    get_player = drop.session.query(Player).filter_by(name=message.from_user.username).first()
     command = commands_list.keys()
     if message.text.lower() in command and user_is_verified(get_player):
         if message.text.lower() in 'kd':
-            drop = DropCards(3)
             drop.run()
-            first_second_third = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text='1️⃣', callback_data='first_btn'),
-                InlineKeyboardButton(text='2️⃣', callback_data='second_btn'),
-                InlineKeyboardButton(text='3️⃣', callback_data='third_btn'),
-            ]])
+            dp['kbs'] = [InlineKeyboardButton(
+                text=['1️⃣', '2️⃣', '3️⃣'][t],
+                callback_data=str(d)
+            ) for t, d in zip(range(len(drop.get_cards_id()[-3:])), drop.get_cards_id()[-3:])]
+
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[dp['kbs']])
 
             await message.answer_photo(
                 reply_to_message_id=message.message_id,
                 photo=BufferedInputFile(drop.merge().getvalue(), 'image.png'),
-                reply_markup=first_second_third,
+                reply_markup=keyboard,
             )
+
         if message.text.lower() in 'ki':
+            """ Useless command for now... """
+
             commands_list['ki'] = f'{message.from_user.username} user inv'
             await message.answer(f'And this is inventory {commands_list[message.text.lower()]}')
 
         if message.text.lower() in 'kc':
-            player_cards = dp['player'].collection()
+            """ User card collection """
 
-            # get_collection = as_list(
-            #     as_marked_section(
-            #         Bold('Commands: \n'),
-            #         *[as_key_value(i.code,
-            #                        ''.join(dp['player'].session.query(Card).join(Card.character).where(Character.id == i.character_id))) for i in player_cards],
-            #         marker=' '
-            #     ),
-            #     sep="\n\n\n",
-            # )
+            player_cards = dp['player'].collection(player=get_player.name)
+
+            """ Format the raw information in a human-readable format """
+            get_collection = as_list(
+                as_marked_section(
+                    Bold('Characters: \n'),
+                    *[as_key_value(i.code,
+                                   ''.join(dp['player']
+                                           .session.query(Character.character_name)
+                                           .join(Character.cards)
+                                           .where(Card.character_id == i.character_id).first()))
+                      for i in player_cards],
+                    marker=' '
+                ),
+                sep="\n\n\n",
+            )
             print(player_cards)
-            print(dp['player'].session.query(Card).join(Card.player).where(Player.name == message.from_user.username))
-            # await message.answer(**get_collection.as_kwargs())
+            await message.answer(**get_collection.as_kwargs())
 
     else:
         await message.answer('Please verify before start playing 🙏')
 
 
-
 @dp.callback_query()
 async def grab_btns(callback: CallbackQuery):
+    """ Getting the card that the user clicked on """
+
     grab = GrabCard()
     grabber = dp['player'].session.query(
         Player).filter_by(name=callback.from_user.username).first()
 
-    btns = {
-        'first_btn': dp['player'].session.query(Card).where(
-            Card.id == grab.grab()[0]).first(),
-        'second_btn': dp['player'].session.query(Card).where(
-            Card.id == grab.grab()[1]).first(),
-        'third_btn': dp['player'].session.query(Card).where(
-            Card.id == grab.grab()[2]).first(),
-    }
+    print('--- CALLBACK DATA ---')
+    print(int(callback.data))
+    print(type(grab.grab()[0]))
 
-    if callback.data in btns.keys():
-        grabber.player_cards.append(btns.get(callback.data))
-        # print(callback.data)
-        # print(btns.keys())
+    """ Getting card id from callback and adding it to user collection """
+    if int(callback.data) in grab.grab():
+        print('Card was successfully added to your collection!')
+        grabber.player_cards.append(dp['player'].session.query(Card).filter_by(id=int(callback.data)).first())
 
 
 async def main() -> None:
+    """ Starting bot """
     await dp.start_polling(bot, start=InitializeDataBase())
 
 

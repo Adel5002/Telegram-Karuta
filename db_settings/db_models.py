@@ -62,10 +62,15 @@ class Character(Base):
         back_populates='character'
     )
 
+    drop_id: Mapped[Optional[int]] = mapped_column(ForeignKey('drop_count.id'))
+    drop: Mapped['Drop'] = relationship(
+        back_populates='characters'
+    )
+
     def __repr__(self) -> str:
         return (
             f'Character(id={self.id}, character_name={self.character_name!r}, series={self.series!r}, wishlist={self.wishlist!r}, '
-            f'edition_num={self.edition_num!r})')
+            f'edition_num={self.edition_num!r}, drop_id={self.drop_id!r})')
 
 
 """Some editions for characters """
@@ -90,6 +95,10 @@ class Drop(Base):
     __tablename__ = 'drop_count'
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    characters: Mapped[List['Character']] = relationship(
+        back_populates='drop'
+    )
 
     def __repr__(self) -> str:
         return f'id={self.id!r}'
